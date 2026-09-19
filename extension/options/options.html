@@ -34,6 +34,12 @@
     border: 1px solid #2e2e30; font-weight: 400; padding: 6px 12px;
   }
   button:hover { filter: brightness(1.1); }
+  select {
+    flex: 1; padding: 9px 12px; border-radius: 8px;
+    background: #141416; border: 1px solid #2e2e30; color: #cacacd;
+    font: inherit; cursor: pointer;
+  }
+  select:focus { outline: none; border-color: #0d9488; }
   ul { list-style: none; margin: 12px 0 0; padding: 0; }
   li {
     display: flex; align-items: center; justify-content: space-between;
@@ -89,6 +95,46 @@
     </div>
   </div>
 
+  <h2>Currency</h2>
+  <div class="card">
+    <div class="row">
+      <select id="currency">
+        <option value="">Loading currencies…</option>
+      </select>
+      <button id="saveCurrency">Save</button>
+    </div>
+    <div class="hint">
+      Prices in ¥ (CNY) and $ (USD) are converted into this currency and
+      <strong>replaced</strong> on the page. Works on product pages and in the
+      seller chat.
+    </div>
+
+    <div class="toggle-row" style="margin-top:12px">
+      <div>
+        <div>Convert prices</div>
+        <div class="hint" style="margin:0">Turn off to leave all prices in the original currency.</div>
+      </div>
+      <button class="ghost" id="togglePrices">On</button>
+    </div>
+
+    <div class="toggle-row">
+      <div>
+        <div>Round to whole units</div>
+        <div class="hint" style="margin:0">e.g. ¥5.00 becomes <strong>LKR 247</strong> instead of LKR 246.98.</div>
+      </div>
+      <button class="ghost" id="toggleRound">On</button>
+    </div>
+
+    <div class="toggle-row">
+      <div>
+        <div>Exchange rate</div>
+        <div class="hint" id="rateInfo" style="margin:0">Checking…</div>
+      </div>
+      <button class="ghost" id="refreshRates">Refresh</button>
+    </div>
+    <div class="msg" id="curMsg"></div>
+  </div>
+
   <h2>Model</h2>
   <div class="card">
     <div class="row">
@@ -98,6 +144,7 @@
     </div>
   </div>
 </div>
+<script src="../data/currencies.data.js"></script>
 <script src="options.js"></script>
 </body>
 </html>

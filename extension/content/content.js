@@ -22,6 +22,17 @@
   const SCROLL_IDLE_MS = 250;
   const MAX_CONCURRENT = 2;
 
+  /** Currency preference, refreshed from the service worker on demand. */
+  const money = {
+    currency: null,
+    enabled: true,
+    roundWhole: true,
+    rates: null,
+    base: "CNY",
+    decimals: 2,
+    loaded: false,
+  };
+
   /** Nodes waiting to be translated, visible ones first. */
   let queue = [];
   let inFlight = 0;
@@ -31,7 +42,7 @@
   let mutationTimer = null;
   let stopped = false;
 
-  const stats = { queued: 0, translated: 0 };
+  const stats = { queued: 0, translated: 0, converted: 0 };
 
   // ---------------------------------------------------------------- helpers
 
@@ -58,11 +69,100 @@
     );
   }
 
+  // ---------------------------------------------------------------- currency
+
+  /**
+   * Load the currency preference and rates once per page.
+   *
+   * Conversion is opt-in per user setting, and needs both a chosen currency and
+   * a rate for it — without either, prices are left exactly as the page wrote
+   * them rather than showing a guessed number.
+   */
+  async function loadCurrency(force = false) {
+    try {
+      const reply = await send("currencyInfo", { force });
+      if (!reply?.ok) return;
+      money.currency = reply.currency ?? null;
+      money.enabled = reply.convertPrices !== false;
+      money.roundWhole = reply.roundWhole !== false;
+      money.rates = reply.rates ?? null;
+      money.base = reply.base ?? "CNY";
+      const meta = window.YKDCurrency?.findCurrency(money.currency);
+      money.decimals = meta?.decimals ?? 2;
+      money.loaded = true;
+    } catch {
+      // Leave conversion off; translation still works.
+    }
+  }
+
+  function conversionActive() {
+    return Boolean(
+      money.loaded &&
+      money.enabled &&
+      money.currency &&
+      money.rates &&
+      money.rates[money.currency],
+    );
+  }
+
+  /**
+   * True when a node is inside a text-entry area.
+   *
+   * Never convert inside something the user is typing into: replacing a price
+   * mid-sentence would be destructive, and the composer is not ours to rewrite.
+   */
+  function isEditable(node) {
+    let el = node.parentElement;
+    while (el) {
+      if (el.isContentEditable) return true;
+      const tag = el.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return true;
+      el = el.parentElement;
+    }
+    return false;
+  }
+
+  /**
+   * Rewrite the prices in one text node.
+   * Returns true when the text changed.
+   */
+  function convertNode(node) {
+    if (!conversionActive()) return false;
+    if (!node?.nodeValue) return false;
+    if (isEditable(node)) return false;
+
+    const result = window.YKDPrice.convertPrices(
+      node.nodeValue,
+      { rates: money.rates },
+      money.currency,
+      { whole: money.roundWhole, decimals: money.decimals },
+    );
+    if (!result.changed) return false;
+
+    node.nodeValue = result.text;
+    return true;
+  }
+
   // ------------------------------------------------------------- collection
 
   /** Scan the document (or a subtree) and add new nodes to the queue. */
   function enqueue(root = document.body) {
     if (!enabled || stopped || !root) return;
+
+    // Prices first: a node with a price but no Chinese would never reach the
+    // translate path, so it has to be converted here or not at all.
+    if (conversionActive()) {
+      try {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let t;
+        while ((t = walker.nextNode())) {
+          convertNode(t);
+        }
+      } catch {
+        // A malformed subtree must not stop translation.
+      }
+    }
+
     const found = collectNodes(root);
     if (found.length === 0) return;
 
@@ -143,6 +243,14 @@
         if (applyTranslation(item.node, value, item.text)) applied++;
       }
       stats.translated += applied;
+
+      // Prices: the translated English may contain ¥ amounts the original did
+      // not (or vice versa), so conversion runs after translation, on the node's
+      // current text.
+      for (const item of chunk) {
+        if (!item.node.isConnected) continue;
+        if (convertNode(item.node)) stats.converted++;
+      }
     } catch (err) {
       console.debug("[YKD] translate failed:", err);
       setConnected(false);
@@ -219,6 +327,9 @@
       setConnected(Boolean(ensured?.ok));
     }
 
+    // Rates are needed before the first scan so prices convert on load.
+    await loadCurrency();
+
     enqueue();
 
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -268,6 +379,13 @@
 
       case "ykd:rescan":
         enqueue();
+        sendResponse({ ok: true });
+        break;
+
+      case "ykd:currency":
+      case "ykd:rates":
+        // The preference changed in another tab or in options; re-apply.
+        loadCurrency().then(() => enqueue());
         sendResponse({ ok: true });
         break;
 

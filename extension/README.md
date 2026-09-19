@@ -16,6 +16,34 @@ leaves the computer.
 - Caches every translation, so revisiting a page is near-instant
 - **Write to sellers in Chinese** — a floating button opens a small compose pebble;
   type in English, press send, and the Chinese lands in the chat box (see below)
+- **See every price in your own currency** — ¥ and $ prices are converted and
+  replaced with live exchange rates (see below)
+
+## Currency conversion
+
+1688 quotes in yuan. Pick your currency once and every price on the page shows
+in it instead.
+
+Open the extension options → **Currency**, choose from 143 currencies (each with
+its flag), and press **Save**. Prices like `¥5.00` become `LKR 247`.
+
+- Covers **product pages and the seller chat** — including a seller quoting
+  `250元` in a message
+- Converts **¥ (CNY) and $ (USD)** amounts
+- **Replaces** the original price, so the page stays readable
+- **Round to whole units** (on by default) — `¥5.00` → `LKR 247`, not `LKR 246.98`
+- Rates refresh **once a day**, or press **Refresh** for the current rate
+- Ranges work too: `¥5-8` → `LKR 247 – 395`
+
+Deliberately **not** converted: bare numbers, quantities (`500件`), percentages,
+dates, phone numbers, and amounts in currencies other than ¥ and $. A price with
+no known rate is left exactly as written rather than showing a guessed number.
+Nothing inside a text box is ever rewritten, so typing a price into the chat
+composer is safe.
+
+Rates come from free, keyless services (currency-api, with open.er-api.com as a
+fallback). They are cached locally, so a failed refresh keeps working with the
+last known rate.
 
 ## Writing a message to a seller
 

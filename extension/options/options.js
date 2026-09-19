@@ -160,4 +160,123 @@ async function checkConnection() {
     : "YKD AI app is not running";
 }
 
-render().then(checkConnection);
+// ------------------------------------------------------------------ currency
+
+// currencies.data.js is loaded by options.html before this file and publishes
+// window.YKDCurrency. An `import` here would be a SyntaxError: options.js is a
+// classic script, not a module, so a bare import kills the entire page.
+//
+// Do NOT destructure these into top-level consts either. Classic scripts share
+// one top-level scope, so any name the data file already declared (CURRENCIES,
+// DEFAULT_CURRENCY, findCurrency…) collides and throws "already been declared".
+// Reading them off the namespace keeps this file's scope clean.
+const CURRENCY = window.YKDCurrency;
+
+function currencyMsg(text, kind = "") {
+  const el = $("curMsg");
+  el.textContent = text;
+  el.className = "msg" + (kind ? " " + kind : "");
+  if (text) setTimeout(() => { el.textContent = ""; }, 6000);
+}
+
+/** "🇱🇰 Sri Lankan Rupee (LKR)" — flag first so the list scans visually. */
+function fillCurrencies(selected) {
+  const select = $("currency");
+  select.textContent = "";
+  for (const c of CURRENCY.CURRENCIES) {
+    const option = document.createElement("option");
+    option.value = c.code;
+    option.textContent = `${c.flag} ${c.name} (${c.code})`;
+    select.appendChild(option);
+  }
+  select.value = selected && CURRENCY.findCurrency(selected) ? selected : CURRENCY.DEFAULT_CURRENCY;
+}
+
+/** "1 CNY = 49.41 LKR · updated today · currency-api" */
+function describeRates(info, currency) {
+  if (!info) return "No rates yet — press Refresh.";
+  const el = $("rateInfo");
+  const age = info.fetchedAt
+    ? Math.round((Date.now() - info.fetchedAt) / 3600000)
+    : null;
+  let when = "just now";
+  if (age !== null) {
+    if (age < 1) when = "just now";
+    else if (age < 24) when = `${age}h ago`;
+    else when = `${Math.round(age / 24)}d ago`;
+  }
+  const stale = info.stale ? " (stale)" : "";
+  const rate = currency ? `1 CNY ≈ ${info.rate ?? "?"} ${currency} · ` : "";
+  el.textContent = `${rate}updated ${when}${stale} · ${info.provider ?? "?"}`;
+}
+
+async function loadCurrency() {
+  const info = await send("currencyInfo");
+  const currency = info?.currency ?? CURRENCY.DEFAULT_CURRENCY;
+
+  fillCurrencies(currency);
+
+  const convert = info?.convertPrices !== false;
+  $("togglePrices").textContent = convert ? "On" : "Off";
+
+  const round = info?.roundWhole !== false;
+  $("toggleRound").textContent = round ? "On" : "Off";
+
+  // Show the live rate for the selected currency.
+  const rate = info?.rates?.[currency] ?? null;
+  describeRates({ ...(info?.info ?? {}), rate }, currency);
+}
+
+$("saveCurrency").addEventListener("click", async () => {
+  const currency = $("currency").value;
+  if (!currency) {
+    currencyMsg("Pick a currency first.", "err");
+    return;
+  }
+  const reply = await send("setCurrency", { currency });
+  if (!reply?.ok) {
+    currencyMsg("Could not save the currency.", "err");
+    return;
+  }
+  const info = await send("currencyInfo");
+  const c = CURRENCY.findCurrency(currency);
+  describeRates({ ...(info?.info ?? {}), rate: info?.rates?.[currency] ?? null }, currency);
+  currencyMsg(`Saved. Prices will show in ${c?.flag ?? ""} ${currency}.`, "ok");
+});
+
+$("togglePrices").addEventListener("click", async () => {
+  const { convertPrices = true } = await chrome.storage.sync.get("convertPrices");
+  await send("setConvertPrices", { convertPrices: !convertPrices });
+  await loadCurrency();
+});
+
+$("toggleRound").addEventListener("click", async () => {
+  const { roundWhole = true } = await chrome.storage.sync.get("roundWhole");
+  await send("setRoundWhole", { roundWhole: !roundWhole });
+  await loadCurrency();
+});
+
+$("refreshRates").addEventListener("click", async () => {
+  const button = $("refreshRates");
+  button.disabled = true;
+  $("rateInfo").textContent = "Fetching…";
+  try {
+    const reply = await send("refreshRates");
+    if (!reply?.ok) {
+      currencyMsg(reply?.error || "Could not fetch rates.", "err");
+      $("rateInfo").textContent = "Refresh failed.";
+      return;
+    }
+    const currency = $("currency").value;
+    const info = await send("currencyInfo");
+    describeRates(
+      { ...(reply.info ?? {}), rate: info?.rates?.[currency] ?? null },
+      currency,
+    );
+    currencyMsg("Exchange rates updated.", "ok");
+  } finally {
+    button.disabled = false;
+  }
+});
+
+render().then(checkConnection).then(loadCurrency);

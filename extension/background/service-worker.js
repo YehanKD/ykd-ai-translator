@@ -13,6 +13,7 @@
 
 import { buildPrompt, parseBatch, makeBatches } from "./translate.js";
 import * as cache from "./cache.js";
+import * as rates from "./rates.js";
 
 const PORT_RANGE = Array.from({ length: 10 }, (_, i) => 8765 + i);
 const HEALTH_TIMEOUT_MS = 1500;
@@ -247,6 +248,54 @@ const handlers = {
   async getEnabled() {
     const { enabled = true } = await chrome.storage.sync.get("enabled");
     return { ok: true, enabled };
+  },
+
+  // -------------------------------------------------------------- currency
+
+  /** Current preference + rates, for content scripts and the options page. */
+  async currencyInfo({ force = false } = {}) {
+    const { currency = null, convertPrices = true, roundWhole = true } =
+      await chrome.storage.sync.get(["currency", "convertPrices", "roundWhole"]);
+    const entry = await rates.getRates({ force });
+    const info = await rates.ratesInfo();
+    return {
+      ok: true,
+      currency,
+      convertPrices: convertPrices !== false,
+      roundWhole: roundWhole !== false,
+      base: entry?.base ?? "CNY",
+      rates: entry?.rates ?? null,
+      info,
+    };
+  },
+
+  /** Manual refresh from the options page. */
+  async refreshRates() {
+    const entry = await rates.fetchRates();
+    if (!entry) {
+      return { ok: false, error: "Could not reach any exchange-rate service." };
+    }
+    const info = await rates.ratesInfo();
+    broadcast({ type: "ykd:rates", info });
+    return { ok: true, info };
+  },
+
+  async setCurrency({ currency }) {
+    await chrome.storage.sync.set({ currency: currency || null });
+    broadcast({ type: "ykd:currency", currency: currency || null });
+    return { ok: true, currency };
+  },
+
+  async setConvertPrices({ convertPrices }) {
+    await chrome.storage.sync.set({ convertPrices: Boolean(convertPrices) });
+    broadcast({ type: "ykd:currency", convertPrices: Boolean(convertPrices) });
+    return { ok: true, convertPrices: Boolean(convertPrices) };
+  },
+
+  async setRoundWhole({ roundWhole }) {
+    await chrome.storage.sync.set({ roundWhole: Boolean(roundWhole) });
+    broadcast({ type: "ykd:currency", roundWhole: Boolean(roundWhole) });
+    return { ok: true, roundWhole: Boolean(roundWhole) };
   },
 };
 
