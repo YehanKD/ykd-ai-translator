@@ -73,11 +73,22 @@ original Chinese is left in place — the extension never inserts a broken trans
 
 Translating everything would break the site. Skipped:
 
-- `<script>`, `<style>`, `<code>`, `<pre>`, `<svg>`, `<canvas>`
+- `<script>`, `<style>`, `<code>`, `<svg>`, `<canvas>`
 - form controls and **`contenteditable` regions** — you type into 1688's chat box, so
   translating it would fight you
 - anything marked `translate="no"` or `.notranslate`
 - strings with no Chinese, and pure numbers, prices or SKUs
+
+**Note on `<pre>`:** it is deliberately *not* skipped. 1688's chat renders every
+message bubble as `<pre class="edit" contenteditable="false">`, so excluding `<pre>`
+silently skipped the entire conversation. The message *input* is
+`<pre contenteditable="true">`, which the contenteditable rule already protects.
+
+### What cannot be translated
+
+Text baked into **images** stays Chinese — the extension rewrites text nodes, and
+there is no text node inside a PNG. On the chat page that means the Alibaba logo
+and the Newton assistant brand mark. Everything else on screen is translated.
 
 ## Configuration
 

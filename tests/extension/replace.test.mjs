@@ -102,18 +102,12 @@ function collectFrom(el) {
   return found;
 }
 
-const SKIP = new Set(["SCRIPT","STYLE","NOSCRIPT","CODE","PRE","KBD","SAMP","VAR",
-  "SVG","CANVAS","TEXTAREA","INPUT","SELECT","OPTION","IFRAME","MATH","TEMPLATE"]);
+// Exercise the REAL filter from the extension. Duplicating SKIP_TAGS here is
+// what let the PRE/chat bug ship: the test's copy and the shipped copy drifted.
+const SKIP = API.SKIP_TAGS;
 
 function isExcludedForTest(node) {
-  let el = node.parentElement;
-  while (el) {
-    if (SKIP.has(el.tagName)) return true;
-    if (el.isContentEditable) return true;
-    if (el.getAttribute?.("translate") === "no") return true;
-    el = el.parentElement;
-  }
-  return false;
+  return API.isExcluded(node);
 }
 
 console.log("1) needsTranslation");
@@ -135,8 +129,8 @@ console.log("\n2) excluded elements are skipped");
   const style = new Element("style").append(new TextNode("起批量"));
   check("style skipped", collectFrom(style).length === 0);
 
-  const pre = new Element("pre").append(new TextNode("起批量"));
-  check("pre skipped", collectFrom(pre).length === 0);
+  const code = new Element("code").append(new TextNode("起批量"));
+  check("code skipped", collectFrom(code).length === 0);
 
   const input = new Element("input", { value: "起批量" });
   check("input skipped", collectFrom(input).length === 0);
@@ -148,6 +142,33 @@ console.log("\n2) excluded elements are skipped");
 
   const noTr = new Element("div", { translate: "no" }).append(new TextNode("起批量"));
   check("translate=no skipped", collectFrom(noTr).length === 0);
+}
+
+console.log("\n2b) 1688 chat structure (regression: message bubbles are <pre>)");
+{
+  // Real markup from air.1688.com's chat:
+  //   <pre class="edit" contenteditable="false">老板，麻烦按...</pre>
+  // A PRE in SKIP_TAGS silently skipped every chat message.
+  const bubble = new Element("pre", { class: "edit", contenteditable: "false" });
+  bubble.append(new TextNode("老板，麻烦按我那家货运代理的指示来操作。"));
+  check("chat message bubble IS collected", collectFrom(bubble).length === 1,
+    "messages render as <pre>, so PRE must not be skipped");
+
+  const list = new Element("div", { class: "message-list" });
+  list.append(bubble);
+  check("bubble inside message-list collected", collectFrom(list).length === 1);
+
+  // The input is a <pre contenteditable="true"> — must still be protected.
+  const inputBox = new Element("pre", { class: "edit", contenteditable: "true" });
+  inputBox.isContentEditable = true;
+  inputBox.append(new TextNode("你好"));
+  check("chat input box still skipped", collectFrom(inputBox).length === 0,
+    "the send box must never be translated");
+
+  // A code block is still protected by CODE, not PRE.
+  const codeBlock = new Element("pre").append(
+    new Element("code").append(new TextNode("const a = 1; // 注释")));
+  check("code inside pre still skipped", collectFrom(codeBlock).length === 0);
 }
 
 console.log("\n3) normal content is collected");

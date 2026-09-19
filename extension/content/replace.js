@@ -12,10 +12,16 @@
  */
 
 const SKIP_TAGS = new Set([
-  "SCRIPT", "STYLE", "NOSCRIPT", "CODE", "PRE", "KBD", "SAMP", "VAR",
+  "SCRIPT", "STYLE", "NOSCRIPT", "CODE", "KBD", "SAMP", "VAR",
   "SVG", "CANVAS", "TEXTAREA", "INPUT", "SELECT", "OPTION", "IFRAME",
   "MATH", "TEMPLATE",
 ]);
+
+// <pre> is deliberately NOT skipped. 1688's chat renders every message bubble
+// as `<pre class="edit" contenteditable="false">`, so excluding PRE silently
+// skipped the entire conversation. The message input is a
+// `<pre contenteditable="true">`, which the contenteditable rule below already
+// protects, so nothing the user types is at risk.
 
 const CJK = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/;
 
@@ -117,11 +123,16 @@ function revertAll() {
 
 // Content scripts are concatenated into one isolated-world scope rather than
 // loaded as modules, so export the pieces the other files need on a namespace.
+// `isExcluded` and `SKIP_TAGS` are exported so tests can exercise the real
+// filter rather than a copy of it — a duplicated rule set is how the PRE bug
+// slipped through.
 window.YKDReplace = {
   collectNodes,
   applyTranslation,
   needsTranslation,
+  isExcluded,
   revertAll,
+  SKIP_TAGS,
   handled,
   originals,
 };
