@@ -151,5 +151,129 @@ console.log("\n10) real 1688 strings");
   check("chat price converted", r3.text === "老板，这个 LKR 272 一件，500件起批", r3.text);
 }
 
+console.log("\n11) grouped prices split across sibling spans (real 1688 markup)");
+{
+  // <div class="price-wrap">
+  //   <span class="symbol">¥</span><span class="number">14</span><span class="symbol">.89</span>
+  // </div>
+  const wrap = (parts, cls = "price-wrap") => ({
+    className: cls,
+    childNodes: parts.map(() => ({})),
+    textContent: parts.join(""),
+    isContentEditable: false,
+    querySelector: () => null,
+  });
+
+  const cases = [
+    [["¥", "668"], "LKR 33,005"],
+    [["¥", "14", ".89"], "LKR 736"],
+    [["¥", "6", ".5"], "LKR 321"],
+    [["¥", "3"], "LKR 148"],
+  ];
+  for (const [parts, expected] of cases) {
+    const el = wrap(parts);
+    const ok = mod.convertGroupedPrice(el, ENTRY, "LKR", { whole: true });
+    check(`${parts.join("")} -> ${expected}`, ok && el.textContent === expected,
+      el.textContent);
+  }
+
+  // A unit suffix is preserved.
+  const withTail = wrap(["¥", "14", ".89", "/件"]);
+  mod.convertGroupedPrice(withTail, ENTRY, "LKR", { whole: true });
+  check("keeps a short unit suffix", withTail.textContent === "LKR 736/件",
+    withTail.textContent);
+}
+
+console.log("\n12) grouped conversion must refuse wrappers it should not touch");
+{
+  const mk = (text, cls = "price-wrap", opts = {}) => ({
+    className: cls,
+    childNodes: [{}, {}],
+    textContent: text,
+    isContentEditable: opts.ce ?? false,
+    querySelector: () => (opts.hasChild ? {} : null),
+  });
+
+  // A wrapper containing a link/button must be left alone.
+  const withLink = mk("¥14.89", "price-wrap", { hasChild: true });
+  check("refuses a container with interactive children",
+    mod.convertGroupedPrice(withLink, ENTRY, "LKR", { whole: true }) === false);
+
+  // Content that is not a price at all.
+  const notPrice = mk("500件");
+  check("refuses non-price content",
+    mod.convertGroupedPrice(notPrice, ENTRY, "LKR", { whole: true }) === false);
+
+  // A price embedded in a longer sentence: not a standalone price element.
+  const sentence = mk("价格 ¥14.89 起");
+  const before = sentence.textContent;
+  check("refuses a price embedded in prose",
+    mod.convertGroupedPrice(sentence, ENTRY, "LKR", { whole: true }) === false
+      && sentence.textContent === before);
+
+  // Two prices in one container: ambiguous, skip.
+  const two = mk("¥5.00 ¥10.00");
+  check("refuses a container with two prices",
+    mod.convertGroupedPrice(two, ENTRY, "LKR", { whole: true }) === false);
+
+  // No rate for the source currency.
+  const noRate = mk("¥14.89");
+  check("refuses when the rate is missing",
+    mod.convertGroupedPrice(noRate, { rates: { CNY: 1 } }, "LKR", { whole: true }) === false);
+}
+
+console.log("\n13) findGroupedPrices filters candidates");
+{
+  const priceEl = {
+    className: "price-wrap", childNodes: [{}, {}], textContent: "¥14.89",
+    isContentEditable: false, querySelector: () => null,
+  };
+  const titleEl = {
+    className: "price-note", childNodes: [{}, {}], textContent: "价格很优惠的说明文字",
+    isContentEditable: false, querySelector: () => null,
+  };
+  const longEl = {
+    className: "price-wrap", childNodes: [{}, {}],
+    textContent: "¥14.89 plus a very long trailing description here",
+    isContentEditable: false, querySelector: () => null,
+  };
+  const root = { querySelectorAll: () => [priceEl, titleEl, longEl] };
+  const found = mod.findGroupedPrices(root);
+  check("finds only the real price", found.length === 1, `${found.length}`);
+  check("correct element", found[0]?.el === priceEl);
+  check("reports the amount", found[0]?.amount === 14.89);
+}
+
+console.log("\n14) amounts of four digits or more (regression)");
+{
+  // The first alternative `\d{1,3}(?:,\d{3})*` matched only the leading three
+  // digits of "1006", so the price was converted wrong AND left a stray tail:
+  // ¥5000 -> "LKR 24,7040" instead of "LKR 247,043".
+  const cases = [
+    ["¥1006.48", 1006.48],
+    ["¥5000", 5000],
+    ["¥12345", 12345],
+    ["¥1,280", 1280],
+    ["¥12,345.67", 12345.67],
+    ["¥999999", 999999],
+  ];
+  for (const [text, amount] of cases) {
+    const p = findPrices(text);
+    check(`${text} parses fully`, p.length === 1 && p[0].amount === amount,
+      `got ${JSON.stringify(p)}`);
+    // The match must consume the whole price, not stop mid-number.
+    check(`${text} consumes the whole number`,
+      p.length === 1 && p[0].end === text.length,
+      `end=${p[0]?.end} len=${text.length}`);
+  }
+
+  const r = convertPrices("¥5000", ENTRY, "LKR", { whole: true });
+  check("¥5000 -> LKR 247,043 (not 24,7040)", r.text === "LKR 247,043", r.text);
+
+  // Ranges with multi-digit bounds.
+  const range = convertPrices("¥100-200", ENTRY, "LKR", { whole: true });
+  check("¥100-200 range", range.text === "LKR 4,941 – 9,882", range.text);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -11,21 +11,34 @@
  */
 
 /**
+ * A money amount.
+ *
+ * Order matters and is the whole trick. `\d{1,3}(?:,\d{3})+` requires at least
+ * one comma group, so it can only match a genuine thousands-separated number;
+ * the plain `\d+` alternative then takes any other digit run IN FULL. Writing
+ * `\d{1,3}(?:,\d{3})*` instead (comma group optional) makes the engine match
+ * just the first three digits of `1006` and stop — which silently corrupted
+ * every price of four digits or more (`¥5000` became `LKR 24,7040`).
+ */
+const AMOUNT = String.raw`(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)`;
+
+/**
  * ¥ / ￥ / $ with a number. The symbol must lead.
  *
  * No leading `\s*`: consuming whitespace before the symbol would make it part
  * of the match, so replacing "价格 ¥5.00" would drop the space before the price.
  */
-const SYMBOL_PRICE = /(?:(US|HK|NT|A|C|NZ|S)\s*)?[¥￥$]\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)/g;
+const SYMBOL_PRICE = new RegExp(
+  String.raw`(?:(US|HK|NT|A|C|NZ|S)\s*)?[¥￥$]\s*` + AMOUNT, "g");
 
 /** A number followed by 元 (yuan) — 1688 writes prices this way in prose. */
-const YUAN_SUFFIX = /(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*元/g;
+const YUAN_SUFFIX = new RegExp(AMOUNT + String.raw`\s*元`, "g");
 
 /**
  * Ranges: the separator must sit between two money amounts, and the second
  * must be a bare number (¥5-8), not a unit.
  */
-const RANGE = /^([-~～至])\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)/;
+const RANGE = new RegExp(String.raw`^([-~～至])\s*` + AMOUNT);
 
 /** Things that look like a price but are not. */
 const NOT_A_PRICE = [
@@ -218,6 +231,98 @@ function convertPrices(text, entry, target, options = {}) {
   return { text: out, changed: count > 0, count };
 }
 
+/**
+ * Prices split across sibling elements.
+ *
+ * 1688 renders many prices as three spans rather than one string:
+ *
+ *   <div class="price-wrap">
+ *     <span class="symbol">¥</span>
+ *     <span class="number">14</span>
+ *     <span class="symbol">.89</span>
+ *   </div>
+ *
+ * No single text node contains a price, so the per-node pass above cannot see
+ * them — this was why the recommendation panels converted but the main product
+ * grid and the cart did not.
+ *
+ * Returns [{ el, amount, currency, tail }] for containers that hold exactly one
+ * price. Deliberately conservative: a wrapper that also contains a title or a
+ * button is skipped, because rewriting it would destroy that content.
+ */
+function findGroupedPrices(root) {
+  const out = [];
+  if (!root?.querySelectorAll) return out;
+
+  // Only containers that look like they exist to hold a price.
+  const candidates = root.querySelectorAll(
+    '[class*="price" i], [class*="money" i], [class*="amount" i]',
+  );
+
+  for (const el of candidates) {
+    const text = (el.textContent || "").trim();
+    if (!text || text.length > 24) continue;
+
+    // Must already be split across several nodes, or the per-node pass owns it.
+    if (el.childNodes.length < 2) continue;
+
+    // Never touch a container holding something interactive or visual.
+    if (el.querySelector("a, button, img, svg, input, select, textarea")) continue;
+    if (el.isContentEditable) continue;
+
+    const prices = findPrices(text);
+    if (prices.length !== 1) continue;
+
+    const hit = prices[0];
+    // The price must be the whole content, give or take a short unit suffix
+    // like "/件". A long or numeric remainder means this is a wrapper, not a
+    // price element, and rewriting it would jumble the text together.
+    if (hit.start !== 0) continue;
+    const tail = text.slice(hit.end);
+    if (tail.length > 8 || /\d/.test(tail)) continue;
+
+    out.push({ el, amount: hit.amount, currency: hit.currency, tail });
+  }
+  return out;
+}
+
+/**
+ * Convert a grouped price in place, collapsing the spans into one text node.
+ * Returns true when it changed something.
+ *
+ * All the safety checks live HERE, not only in findGroupedPrices: this is the
+ * function that mutates the DOM, so it must be safe to call on any element.
+ * `findGroupedPrices` shares the same rules to pre-filter candidates.
+ */
+function convertGroupedPrice(el, entry, target, options = {}) {
+  const { whole = true, decimals } = options;
+  if (!el || el.isContentEditable) return false;
+
+  const text = (el.textContent || "").trim();
+  if (!text || text.length > 24) return false;
+
+  // A container with a link, button or image is a wrapper, not a price element.
+  if (typeof el.querySelector === "function") {
+    if (el.querySelector("a, button, img, svg, input, select, textarea")) return false;
+  }
+
+  const prices = findPrices(text);
+  if (prices.length !== 1) return false;
+
+  const hit = prices[0];
+  // The price must BE the content: not preceded by other text, and followed by
+  // at most a short unit suffix. Otherwise this is prose or a wrapper.
+  if (hit.start !== 0) return false;
+  const tail = text.slice(hit.end);
+  if (tail.length > 8 || /\d/.test(tail)) return false;
+
+  const value = convertAmount(entry, hit.amount, hit.currency, target);
+  if (value === null) return false;
+
+  el.textContent = `${target} ${formatAmount(value, target, { whole, decimals })}${tail}`;
+  return true;
+}
+
 // Content scripts share one isolated-world scope, so publish the API the
 // content script consumes. (`export` is not available: Chrome injects content
 // scripts as classic scripts, where it is a SyntaxError.)
@@ -227,4 +332,6 @@ window.YKDPrice = {
   convertAmount,
   formatAmount,
   resolveCurrency,
+  findGroupedPrices,
+  convertGroupedPrice,
 };

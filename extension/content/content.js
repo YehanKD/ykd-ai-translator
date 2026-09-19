@@ -143,6 +143,47 @@
     return true;
   }
 
+  /**
+   * Rewrite prices that 1688 splits across sibling spans
+   * (`<span class="symbol">¥</span><span class="number">14</span>…`).
+   * The per-node pass cannot see those, because no single text node holds a
+   * whole price.
+   */
+  function convertGrouped(root) {
+    if (!conversionActive()) return 0;
+    let changed = 0;
+    try {
+      for (const item of window.YKDPrice.findGroupedPrices(root)) {
+        if (convertGroupedEl(item.el)) changed++;
+      }
+    } catch {
+      // A malformed subtree must not stop translation.
+    }
+    return changed;
+  }
+
+  /** Convert one already-identified grouped price. */
+  function convertGroupedEl(el) {
+    const ok = window.YKDPrice.convertGroupedPrice(
+      el,
+      { rates: money.rates },
+      money.currency,
+      { whole: money.roundWhole, decimals: money.decimals },
+    );
+    if (ok) {
+      // The node was rewritten wholesale, so mark every descendant as handled
+      // to keep the translator from picking up our own output.
+      try {
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let t;
+        while ((t = walker.nextNode())) window.YKDReplace.handled.add(t);
+      } catch {
+        // Non-fatal.
+      }
+    }
+    return ok;
+  }
+
   // ------------------------------------------------------------- collection
 
   /** Scan the document (or a subtree) and add new nodes to the queue. */
@@ -161,6 +202,7 @@
       } catch {
         // A malformed subtree must not stop translation.
       }
+      stats.converted += convertGrouped(root);
     }
 
     const found = collectNodes(root);
@@ -305,6 +347,18 @@
       if (relevant) break;
     }
     if (!relevant) return;
+
+    // Newly rendered price containers need converting too; the grid on the
+    // home page streams in after load.
+    if (conversionActive()) {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType === 1) {
+            stats.converted += convertGrouped(node);
+          }
+        }
+      }
+    }
 
     if (mutationTimer) clearTimeout(mutationTimer);
     mutationTimer = setTimeout(() => {
