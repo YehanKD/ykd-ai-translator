@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+build-venv/
+.venv/
+
+# Build output
+build/
+dist/
+AppDir/
+*.spec
+*.AppImage
+
+# Large binaries — fetch with the commands in README.md
+runtime/
+models/
+*.gguf
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

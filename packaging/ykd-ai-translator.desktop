@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=YKD AI Translator
+Comment=Offline multilingual translator (38 languages)
+Exec=YKD_AI_Translator
+Icon=ykd-ai-translator
+Terminal=false
+Type=Application
+Categories=Utility;Translation;
+StartupWMClass=YKD_AI_Translator
