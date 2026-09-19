@@ -22,3 +22,5 @@ models/
 .idea/
 *.swp
 .DS_Store
+ykd-1688-translator-*.zip
+.hermes/

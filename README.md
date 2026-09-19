@@ -21,6 +21,8 @@ runtime that serves the model over a local socket.
 - **Light and dark themes.**
 - **Collapsible sidebar** for a compact workspace.
 - **Clipboard mode** — optionally translate whatever you copy.
+- **Browser extension** — translate 1688.com (or any allowlisted site) directly in
+  Chrome, including seller chat. See [`extension/`](extension/README.md).
 
 ## Requirements
 
@@ -213,7 +215,8 @@ ykd/
 runtime/linux|windows llama.cpp binaries
 models/               the GGUF model
 packaging/            .desktop file, icon, Inno Setup script
-tools/                maintenance scripts (README screenshot)
+extension/            Chrome extension (1688.com and other allowlisted sites)
+tools/                maintenance scripts (README screenshot, extension packaging)
 tests/                test suite
 ```
 

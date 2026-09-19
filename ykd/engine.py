@@ -30,6 +30,9 @@ MODEL_FILENAME = "Hy-MT2-7B-Q4_K_M.gguf"
 TEMPERATURE = 0.3
 MAX_TOKENS = 4096
 CONTEXT_SIZE = 4096
+# Concurrent server slots. The desktop UI needs one; the browser extension
+# benefits from several so batched page requests can overlap.
+PARALLEL_SLOTS = 4
 
 # How long to wait for the model to load before calling it a failure.
 STARTUP_TIMEOUT = 180.0
@@ -65,11 +68,55 @@ def model_path() -> Path:
     return found if found else _bundle_root() / "models" / MODEL_FILENAME
 
 
-def _free_port() -> int:
-    """Ask the OS for an unused loopback port."""
+# The browser extension needs a predictable address. Prefer this port and fall
+# back through a short range if it is taken; the chosen port is written to
+# ~/.ykd-ai/port so a client can discover it without scanning.
+PREFERRED_PORT = 8765
+PORT_RANGE = range(8765, 8775)
+
+
+def _choose_port() -> int:
+    """Return a free loopback port, preferring the well-known one.
+
+    Binding is not held open — the OS may hand the port to someone else between
+    here and llama-server binding it. That is acceptable: the range plus the
+    port file make discovery reliable, and a lost race simply means a fallback
+    port is used.
+    """
+    for candidate in PORT_RANGE:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind(("127.0.0.1", candidate))
+                return candidate
+            except OSError:
+                continue
+    # Nothing in the preferred range is free; fall back to any free port.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+def write_port_file(port: int) -> None:
+    """Publish the active port so external clients can find the server."""
+    try:
+        from .model_store import user_data_dir
+
+        directory = user_data_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "port").write_text(str(port), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def clear_port_file() -> None:
+    """Remove the published port when the server stops."""
+    try:
+        from .model_store import user_data_dir
+
+        (user_data_dir() / "port").unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 class Engine:
@@ -117,7 +164,7 @@ class Engine:
                 self._set_state(STATE_FAILED, f"model file missing: {model}")
                 return
 
-            self.port = _free_port()
+            self.port = _choose_port()
             self._set_state(STATE_LOADING)
 
             creationflags = 0
@@ -139,6 +186,9 @@ class Engine:
                 "--port", str(self.port),
                 "-ngl", "99",              # offload every layer to the GPU
                 "-c", str(CONTEXT_SIZE),
+                # Parallel slots: the browser extension translates in batches,
+                # and more slots let concurrent page requests overlap.
+                "--parallel", str(PARALLEL_SLOTS),
                 "--no-webui",
             ]
             try:
@@ -201,6 +251,7 @@ class Engine:
                 )
                 if r.status_code == 200:
                     self._set_state(STATE_READY)
+                    write_port_file(self.port)
                     return
             except requests.RequestException:
                 pass
@@ -225,6 +276,7 @@ class Engine:
                     proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     pass
+        clear_port_file()
         self._set_state(STATE_IDLE)
 
     @staticmethod

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: dark; }
+  body {
+    width: 280px; margin: 0; padding: 14px;
+    background: #141416; color: #cacacd;
+    font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 14px; margin: 0 0 10px; color: #e8e8ea; font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #f87171; flex: none; }
+  .dot.ok { background: #0d9488; }
+  .muted { color: #7c7c7e; font-size: 12px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 12px 0; }
+  .stat { background: #1f1f21; border: 1px solid #2e2e30; border-radius: 8px; padding: 8px 10px; }
+  .stat b { display: block; font-size: 16px; color: #e8e8ea; }
+  .stat span { font-size: 11px; color: #7c7c7e; }
+  button {
+    width: 100%; padding: 8px; border-radius: 8px; cursor: pointer;
+    background: #0d9488; color: #fff; border: none; font: inherit; font-weight: 600;
+  }
+  button.ghost {
+    background: transparent; color: #cacacd; border: 1px solid #2e2e30; font-weight: 400;
+  }
+  button:hover { filter: brightness(1.1); }
+  .sep { height: 1px; background: #2e2e30; margin: 12px 0; }
+  a { color: #0d9488; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>YKD AI Translator</h1>
+
+  <div class="row">
+    <span class="dot" id="dot"></span>
+    <span id="status">Checking…</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><b id="translated">0</b><span>translated</span></div>
+    <div class="stat"><b id="cached">0</b><span>from cache</span></div>
+  </div>
+
+  <button id="toggle">Pause on this site</button>
+  <div class="row" style="margin-top:8px">
+    <button class="ghost" id="rescan">Re-scan page</button>
+  </div>
+
+  <div class="sep"></div>
+
+  <div class="row" style="justify-content:space-between">
+    <a href="#" id="options">Sites &amp; settings</a>
+    <a href="#" id="clearcache">Clear cache</a>
+  </div>
+  <div class="muted" id="cacheline" style="margin-top:6px"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

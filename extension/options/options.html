@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>YKD AI Translator — Settings</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 32px;
+    background: #141416; color: #cacacd;
+    font: 14px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; color: #e8e8ea; }
+  .sub { color: #7c7c7e; margin-bottom: 24px; font-size: 13px; }
+  h2 { font-size: 14px; margin: 28px 0 8px; color: #e8e8ea; }
+  .card {
+    background: #1f1f21; border: 1px solid #2e2e30;
+    border-radius: 10px; padding: 16px;
+  }
+  .row { display: flex; gap: 8px; align-items: center; }
+  input[type="text"] {
+    flex: 1; padding: 9px 12px; border-radius: 8px;
+    background: #141416; border: 1px solid #2e2e30; color: #cacacd;
+    font: inherit;
+  }
+  input[type="text"]:focus { outline: none; border-color: #0d9488; }
+  button {
+    padding: 9px 16px; border-radius: 8px; cursor: pointer;
+    background: #0d9488; color: #fff; border: none; font: inherit; font-weight: 600;
+  }
+  button.ghost {
+    background: transparent; color: #cacacd;
+    border: 1px solid #2e2e30; font-weight: 400; padding: 6px 12px;
+  }
+  button:hover { filter: brightness(1.1); }
+  ul { list-style: none; margin: 12px 0 0; padding: 0; }
+  li {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 12px; border-radius: 8px; background: #141416;
+    border: 1px solid #2e2e30; margin-bottom: 6px;
+    font-family: ui-monospace, monospace; font-size: 13px;
+  }
+  .hint { color: #7c7c7e; font-size: 12px; margin-top: 10px; }
+  .msg { margin-top: 10px; font-size: 13px; min-height: 18px; }
+  .msg.err { color: #f87171; }
+  .msg.ok { color: #0d9488; }
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 0;
+  }
+  .toggle-row + .toggle-row { border-top: 1px solid #2e2e30; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>YKD AI Translator</h1>
+  <div class="sub">Translate 1688.com in your browser using the local YKD AI app.</div>
+
+  <h2>Auto-translate on these sites</h2>
+  <div class="card">
+    <div class="row">
+      <input type="text" id="pattern" placeholder="*://*.1688.com/*">
+      <button id="add">Add site</button>
+    </div>
+    <div class="hint">
+      Chrome match patterns. <code>*://*.1688.com/*</code> covers the whole site;
+      <code>*://example.com/*</code> covers a single domain.
+    </div>
+    <div class="msg" id="msg"></div>
+    <ul id="list"></ul>
+  </div>
+
+  <h2>Behaviour</h2>
+  <div class="card">
+    <div class="toggle-row">
+      <div>
+        <div>Translate automatically</div>
+        <div class="hint" style="margin:0">Turn off to translate only when you press Re-scan.</div>
+      </div>
+      <button class="ghost" id="toggleEnabled">On</button>
+    </div>
+    <div class="toggle-row">
+      <div>
+        <div>Target language</div>
+        <div class="hint" style="margin:0">Currently fixed to English.</div>
+      </div>
+      <span class="hint" style="margin:0">English</span>
+    </div>
+  </div>
+
+  <h2>Model</h2>
+  <div class="card">
+    <div class="row">
+      <span id="conn" class="hint" style="margin:0">Checking…</span>
+      <span style="flex:1"></span>
+      <button class="ghost" id="recheck">Re-check</button>
+    </div>
+  </div>
+</div>
+<script src="options.js"></script>
+</body>
+</html>

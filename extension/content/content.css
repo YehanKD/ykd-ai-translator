@@ -1,0 +1,64 @@
+#ykd-ai-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #1f1f21;
+  color: #cacacd;
+  border: 1px solid #2e2e30;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  max-width: min(680px, 92vw);
+}
+
+#ykd-ai-banner .ykd-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f87171;
+  flex: none;
+}
+
+#ykd-ai-banner button {
+  font: inherit;
+  padding: 5px 12px;
+  border-radius: 7px;
+  border: 1px solid #2e2e30;
+  background: transparent;
+  color: #cacacd;
+  cursor: pointer;
+}
+
+#ykd-ai-banner button:hover:not(:disabled) {
+  background: #2e2e30;
+}
+
+#ykd-ai-banner button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+#ykd-ai-banner .ykd-close {
+  border: none;
+  padding: 2px 6px;
+  font-size: 16px;
+  line-height: 1;
+  color: #7c7c7e;
+}
+
+/* A brief highlight so translated text is noticeable without being distracting.
+   Removed by the content script after the animation. */
+.ykd-translated {
+  animation: ykd-fade 0.9s ease-out;
+}
+
+@keyframes ykd-fade {
+  from { background-color: rgba(13, 148, 136, 0.22); }
+  to   { background-color: transparent; }
+}

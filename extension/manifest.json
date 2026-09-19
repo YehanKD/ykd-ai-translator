@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "YKD AI Translator for 1688",
+  "version": "1.0.0",
+  "description": "Translate 1688.com into English using the local YKD AI app. Runs offline on your own machine — no cloud, no API key.",
+
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
+
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
+
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "options_page": "options/options.html",
+
+  "content_scripts": [
+    {
+      "matches": ["*://*.1688.com/*"],
+      "js": [
+        "content/replace.js",
+        "content/banner.js",
+        "content/content.js"
+      ],
+      "css": ["content/content.css"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ]
+}
