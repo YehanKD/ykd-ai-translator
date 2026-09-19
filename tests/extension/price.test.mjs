@@ -244,6 +244,113 @@ console.log("\n13) findGroupedPrices filters candidates");
   check("reports the amount", found[0]?.amount === 14.89);
 }
 
+console.log("\n13b) store-page markup: unclassed container (symbol-driven climb)");
+{
+  // Real markup from guangpo.1688.com/page/offerlist.htm — the price container
+  // has NO class, only inline styles, so a class-hinted query finds nothing:
+  //
+  //   <div><span style="…">¥</span><span style="…">5.4</span></div>
+  //
+  // Build a tiny DOM: body > div(price) > span(sym), span(num)
+  const textNode = (v) => ({ nodeType: 3, nodeValue: v, parentElement: null });
+
+  const makeEl = (tag, cls = "") => {
+    const el = {
+      tagName: tag.toUpperCase(),
+      className: cls,
+      childNodes: [],
+      parentElement: null,
+      isContentEditable: false,
+      ownerDocument: null,
+      querySelector: () => null,
+      get textContent() {
+        return this.childNodes.map((c) =>
+          c.nodeType === 3 ? c.nodeValue : c.textContent).join("");
+      },
+      set textContent(v) {
+        this.childNodes = [{ nodeType: 3, nodeValue: v, parentElement: this }];
+      },
+    };
+    return el;
+  };
+
+  const body = makeEl("body");
+  const priceDiv = makeEl("div");              // deliberately no class
+  const sym = makeEl("span");
+  const num = makeEl("span");
+  const symText = textNode("¥");
+  const numText = textNode("5.4");
+  symText.parentElement = sym;
+  numText.parentElement = num;
+  sym.childNodes.push(symText);
+  num.childNodes.push(numText);
+  priceDiv.childNodes.push(sym, num);
+  sym.parentElement = priceDiv;
+  num.parentElement = priceDiv;
+  priceDiv.parentElement = body;
+  body.childNodes.push(priceDiv);
+
+  // Walk the whole tree so the symbol-driven sweep can find the text node.
+  const all = [];
+  const collect = (el) => {
+    all.push(el);
+    for (const c of el.childNodes) if (c.nodeType === 1) collect(c);
+  };
+  collect(body);
+
+  // The walker is called with whatever root the caller passes; make it walk
+  // from `body` so the fake tree is reachable regardless of the wrapper used.
+  const doc = {
+    createTreeWalker(root) {
+      const start = root && root.childNodes ? root : body;
+      const texts = [];
+      const walk = (el) => {
+        for (const c of el.childNodes) {
+          if (c.nodeType === 3) texts.push(c);
+          else walk(c);
+        }
+      };
+      walk(start);
+      let i = 0;
+      return { nextNode: () => texts[i++] ?? null };
+    },
+  };
+  body.ownerDocument = doc;
+  priceDiv.ownerDocument = doc;
+  sym.ownerDocument = doc;
+  num.ownerDocument = doc;
+
+  // Pass the real element as root (as the content script does with document.body).
+  const root = body;
+  const found = mod.findGroupedPrices(root);
+  check("finds a price in an UNCLASSED container", found.length === 1,
+    `${found.length}`);
+  check("amount parsed from the split spans", found[0]?.amount === 5.4,
+    `${found[0]?.amount}`);
+
+  const ok = mod.convertGroupedPrice(found[0].el, ENTRY, "LKR", { whole: true });
+  check("converts it in place", ok && priceDiv.textContent === "LKR 267",
+    priceDiv.textContent);
+}
+
+console.log("\n13c) the climb must pick the SMALLEST matching ancestor");
+{
+  // A card whose whole text happens to be one price but which contains a
+  // nested, tighter price container: the inner one must win.
+  const mk = (text, kids = 2) => ({
+    className: "", childNodes: new Array(kids).fill({}),
+    textContent: text, isContentEditable: false, querySelector: () => null,
+  });
+  const inner = mk("¥5.4");
+  const outer = mk("¥5.4");
+  check("inner element is accepted", mod.convertGroupedPrice(inner, ENTRY, "LKR", { whole: true }) === true);
+  check("outer element is accepted too",
+    mod.convertGroupedPrice(outer, ENTRY, "LKR", { whole: true }) === true);
+  check("a container with extra text is refused",
+    mod.convertGroupedPrice(mk("¥5.4 Over 44,000 units sold"), ENTRY, "LKR", { whole: true }) === false,
+    "the card wrapper must not be rewritten");
+}
+
 console.log("\n14) amounts of four digits or more (regression)");
 {
   // The first alternative `\d{1,3}(?:,\d{3})*` matched only the leading three

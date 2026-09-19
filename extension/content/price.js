@@ -232,56 +232,108 @@ function convertPrices(text, entry, target, options = {}) {
 }
 
 /**
+ * If `el` holds exactly one price and nothing else, describe it.
+ *
+ * Shared by the finder and the mutator so both apply identical rules, and so
+ * the mutating path is safe to call on any element.
+ */
+function priceInElement(el) {
+  if (!el || el.isContentEditable) return null;
+
+  // A split price spans several child nodes. A single-node price is already
+  // handled by the per-text-node pass, so requiring 2+ avoids double work.
+  if (!el.childNodes || el.childNodes.length < 2) return null;
+
+  const text = (el.textContent || "").trim();
+  if (!text || text.length > 24) return null;
+
+  // A container with a link, button or image is a wrapper, not a price element.
+  if (typeof el.querySelector === "function") {
+    if (el.querySelector("a, button, img, svg, input, select, textarea")) return null;
+  }
+
+  const prices = findPrices(text);
+  if (prices.length !== 1) return null;
+
+  const hit = prices[0];
+  // The price must BE the content: not preceded by other text, and followed by
+  // at most a short unit suffix. Otherwise this is prose or a wrapper.
+  if (hit.start !== 0) return null;
+  const tail = text.slice(hit.end);
+  if (tail.length > 8 || /\d/.test(tail)) return null;
+
+  return { el, amount: hit.amount, currency: hit.currency, tail };
+}
+
+/** How far up from a currency symbol to look for its price container. */
+const MAX_CLIMB = 5;
+
+/**
  * Prices split across sibling elements.
  *
- * 1688 renders many prices as three spans rather than one string:
+ * 1688 renders these differently per page, and the markup differs enough that
+ * class names alone cannot be trusted:
  *
- *   <div class="price-wrap">
- *     <span class="symbol">¥</span>
- *     <span class="number">14</span>
- *     <span class="symbol">.89</span>
- *   </div>
+ *   home page:    <div class="price-wrap">
+ *                   <span class="symbol">¥</span><span class="number">14</span>
  *
- * No single text node contains a price, so the per-node pass above cannot see
- * them — this was why the recommendation panels converted but the main product
- * grid and the cart did not.
+ *   store page:   <div>                                  (no class at all)
+ *                   <span style="…">¥</span><span style="…">5.4</span>
  *
- * Returns [{ el, amount, currency, tail }] for containers that hold exactly one
- * price. Deliberately conservative: a wrapper that also contains a title or a
- * button is skipped, because rewriting it would destroy that content.
+ * So there are two sweeps: a cheap class-hinted query, then a symbol-driven
+ * climb that starts from every currency symbol and walks up to the smallest
+ * ancestor whose entire content is one price. The second is what makes this
+ * work on markup we have never seen.
  */
 function findGroupedPrices(root) {
   const out = [];
-  if (!root?.querySelectorAll) return out;
+  if (!root) return out;
 
-  // Only containers that look like they exist to hold a price.
-  const candidates = root.querySelectorAll(
-    '[class*="price" i], [class*="money" i], [class*="amount" i]',
-  );
+  const seen = new Set();
+  const add = (el) => {
+    if (seen.has(el)) return false;
+    const item = priceInElement(el);
+    if (!item) return false;
+    out.push(item);
+    seen.add(el);
+    return true;
+  };
 
-  for (const el of candidates) {
-    const text = (el.textContent || "").trim();
-    if (!text || text.length > 24) continue;
+  // 1) Class-hinted sweep — cheap, and covers the home page's price-wrap.
+  if (typeof root.querySelectorAll === "function") {
+    let candidates = [];
+    try {
+      candidates = root.querySelectorAll(
+        '[class*="price" i], [class*="money" i], [class*="amount" i]',
+      );
+    } catch {
+      candidates = [];
+    }
+    for (const el of candidates) add(el);
+  }
 
-    // Must already be split across several nodes, or the per-node pass owns it.
-    if (el.childNodes.length < 2) continue;
+  // 2) Symbol-driven climb — class-agnostic, covers the store page.
+  const doc = root.ownerDocument
+    ?? (typeof document !== "undefined" ? document : null);
+  if (!doc || typeof doc.createTreeWalker !== "function") return out;
 
-    // Never touch a container holding something interactive or visual.
-    if (el.querySelector("a, button, img, svg, input, select, textarea")) continue;
-    if (el.isContentEditable) continue;
+  let walker;
+  try {
+    walker = doc.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */);
+  } catch {
+    return out;
+  }
 
-    const prices = findPrices(text);
-    if (prices.length !== 1) continue;
+  let node;
+  while ((node = walker.nextNode())) {
+    const value = node.nodeValue;
+    if (!value || !/[¥￥$]/.test(value)) continue;
 
-    const hit = prices[0];
-    // The price must be the whole content, give or take a short unit suffix
-    // like "/件". A long or numeric remainder means this is a wrapper, not a
-    // price element, and rewriting it would jumble the text together.
-    if (hit.start !== 0) continue;
-    const tail = text.slice(hit.end);
-    if (tail.length > 8 || /\d/.test(tail)) continue;
-
-    out.push({ el, amount: hit.amount, currency: hit.currency, tail });
+    let el = node.parentElement;
+    for (let depth = 0; el && depth < MAX_CLIMB; depth++, el = el.parentElement) {
+      if (seen.has(el)) break;
+      if (add(el)) break;   // smallest matching ancestor wins
+    }
   }
   return out;
 }
@@ -289,37 +341,17 @@ function findGroupedPrices(root) {
 /**
  * Convert a grouped price in place, collapsing the spans into one text node.
  * Returns true when it changed something.
- *
- * All the safety checks live HERE, not only in findGroupedPrices: this is the
- * function that mutates the DOM, so it must be safe to call on any element.
- * `findGroupedPrices` shares the same rules to pre-filter candidates.
  */
 function convertGroupedPrice(el, entry, target, options = {}) {
   const { whole = true, decimals } = options;
-  if (!el || el.isContentEditable) return false;
+  const item = priceInElement(el);
+  if (!item) return false;
 
-  const text = (el.textContent || "").trim();
-  if (!text || text.length > 24) return false;
-
-  // A container with a link, button or image is a wrapper, not a price element.
-  if (typeof el.querySelector === "function") {
-    if (el.querySelector("a, button, img, svg, input, select, textarea")) return false;
-  }
-
-  const prices = findPrices(text);
-  if (prices.length !== 1) return false;
-
-  const hit = prices[0];
-  // The price must BE the content: not preceded by other text, and followed by
-  // at most a short unit suffix. Otherwise this is prose or a wrapper.
-  if (hit.start !== 0) return false;
-  const tail = text.slice(hit.end);
-  if (tail.length > 8 || /\d/.test(tail)) return false;
-
-  const value = convertAmount(entry, hit.amount, hit.currency, target);
+  const value = convertAmount(entry, item.amount, item.currency, target);
   if (value === null) return false;
 
-  el.textContent = `${target} ${formatAmount(value, target, { whole, decimals })}${tail}`;
+  el.textContent =
+    `${target} ${formatAmount(value, target, { whole, decimals })}${item.tail}`;
   return true;
 }
 
