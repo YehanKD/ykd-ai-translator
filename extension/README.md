@@ -14,6 +14,27 @@ leaves the computer.
 - Translates **what is on screen first**, then follows as you scroll
 - Keeps up with live updates, so **new seller messages are translated as they arrive**
 - Caches every translation, so revisiting a page is near-instant
+- **Write to sellers in Chinese** — a floating button opens a small compose pebble;
+  type in English, press send, and the Chinese lands in the chat box (see below)
+
+## Writing a message to a seller
+
+The seller chat is in Chinese, but you do not have to write in it.
+
+1. A small teal button sits in the bottom-left of any page that has a message box.
+   It is **draggable** — put it wherever suits, and it stays there.
+2. Click it. A rounded panel opens with a text box.
+3. Type your message in English and press **Translate & insert** (or Ctrl/Cmd+Enter).
+4. The Chinese translation is placed in the site's message box.
+
+**It does not send for you.** The text sits in the box so you can read it over,
+edit it if you want, and press send yourself. That is deliberate — you are talking
+to a supplier, and it is worth a glance before it goes.
+
+If you type Chinese yourself, it is inserted as-is without translating.
+
+The button only appears on pages that actually have a message box, so it stays out
+of the way on product and search pages.
 
 ## Requirements
 

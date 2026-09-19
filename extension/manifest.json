@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YKD AI Translator for 1688",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Translate 1688.com into English using the local YKD AI app. Runs offline on your own machine — no cloud, no API key.",
 
   "permissions": [
@@ -36,7 +36,9 @@
       "js": [
         "content/replace.js",
         "content/banner.js",
-        "content/content.js"
+        "content/compose.js",
+        "content/content.js",
+        "content/pebble.js"
       ],
       "css": ["content/content.css"],
       "run_at": "document_idle",
