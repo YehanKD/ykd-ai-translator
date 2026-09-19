@@ -22,12 +22,27 @@ function msg(text, kind = "") {
   const el = $("msg");
   el.textContent = text;
   el.className = "msg" + (kind ? " " + kind : "");
-  if (text) setTimeout(() => { el.textContent = ""; }, 4000);
+  // Only auto-clear terminal messages. Clearing a "waiting…" notice while the
+  // permission prompt is still open would leave the page looking dead.
+  if (text && kind) {
+    clearTimeout(msg._timer);
+    msg._timer = setTimeout(() => { el.textContent = ""; }, 4000);
+  }
 }
 
-/** A Chrome match pattern needs scheme://host/path. */
+/**
+ * A Chrome match pattern needs scheme://host/path.
+ *
+ * The host is a real hostname (or `*` / `*.host`), so whitespace and other
+ * non-hostname characters are rejected. Without this, free text like
+ * "!!! not a url !!!" normalised into a "valid" pattern and was added.
+ */
 function validPattern(p) {
-  return /^(\*|https?):\/\/(\*|\*\.[^/*]+|[^/*]+)\/.*$/.test(p.trim());
+  const trimmed = p.trim();
+  if (!/^(\*|https?):\/\/(\*|\*\.[^/*]+|[^/*]+)\/.*$/.test(trimmed)) return false;
+  const host = trimmed.match(/^(\*|https?):\/\/([^/]+)/)?.[2] ?? "";
+  // Letters, digits, dots and hyphens only (plus a leading *.).
+  return /^(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$/.test(host);
 }
 
 /** Turn a bare domain into a usable pattern. */
@@ -50,6 +65,29 @@ async function setPatterns(patterns) {
 }
 
 /**
+ * The scripts a translated site needs, in load order.
+ *
+ * Read from the manifest rather than hard-coded, so a newly added site gets
+ * exactly the same content scripts as 1688 — including the currencies data and
+ * the price converter. Hard-coding a shorter list here silently gave added
+ * sites a partial feature set (no price conversion, no compose pebble).
+ */
+function contentScriptFiles() {
+  const fromManifest = chrome.runtime.getManifest()
+    .content_scripts?.flatMap((cs) => cs.js ?? []) ?? [];
+  if (fromManifest.length) return fromManifest;
+  // Fallback for an unexpected manifest shape.
+  return ["content/replace.js", "content/banner.js", "content/compose.js",
+          "content/content.js", "content/pebble.js"];
+}
+
+/** The stylesheet a translated site needs. */
+function contentScriptCss() {
+  return chrome.runtime.getManifest()
+    .content_scripts?.flatMap((cs) => cs.css ?? []) ?? [];
+}
+
+/**
  * Register content scripts for each allowed pattern.
  *
  * The manifest's static content script covers 1688.com; anything the user adds
@@ -63,12 +101,15 @@ async function registerScripts(patterns) {
   const extra = patterns.filter((p) => !/1688\.com/.test(p));
   if (extra.length === 0) return;
 
+  const js = contentScriptFiles();
+  const css = contentScriptCss();
+
   await chrome.scripting.registerContentScripts(
     extra.map((pattern, i) => ({
       id: `ykd-site-${i}`,
       matches: [pattern],
-      js: ["content/replace.js", "content/banner.js", "content/content.js"],
-      css: ["content/content.css"],
+      js,
+      css,
       runAt: "document_idle",
       allFrames: true,
     })),
@@ -107,36 +148,110 @@ async function render() {
   $("toggleEnabled").textContent = enabled ? "On" : "Off";
 }
 
-$("add").addEventListener("click", async () => {
-  const raw = $("pattern").value;
-  const pattern = normalise(raw);
-  if (!validPattern(pattern)) {
-    msg("That does not look like a valid site pattern.", "err");
-    return;
-  }
+/**
+ * Ask Chrome for permission to run on a host, returning a result object.
+ *
+ * Two rules that are easy to get wrong and both produce a silent failure:
+ *
+ *  - `chrome.permissions.request` only works inside a user gesture, so it must
+ *    be called synchronously from the click handler — before any `await`.
+ *  - the origin must be covered by the manifest's `optional_host_permissions`.
+ *    A wildcard-scheme pattern requires a wildcard-scheme entry there;
+ *    declaring only http and https separately does NOT cover it, and Chrome
+ *    rejects with "Only permissions specified in the manifest may be
+ *    requested." (Note: writing that pattern literally inside a block comment
+ *    is impossible — it contains the comment terminator.)
+ *
+ * The caller must also await this and report the outcome, or a rejection
+ * surfaces as "nothing happened".
+ */
+function requestOrigin(host) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      resolve(result);
+    };
 
-  // Ask Chrome for permission to run on the new origin.
-  const origin = pattern.match(/^(\*|https?):\/\/([^/]+)/);
-  if (origin) {
-    const host = origin[2].replace(/^\*\./, "");
-    const granted = await chrome.permissions.request({
-      origins: [`*://*.${host}/*`, `*://${host}/*`],
-    });
-    if (!granted) {
-      msg("Permission was not granted for that site.", "err");
+    try {
+      const request = chrome.permissions.request({
+        origins: [`*://*.${host}/*`, `*://${host}/*`],
+      });
+      if (!request || typeof request.then !== "function") {
+        finish({ granted: false, error: "Permission request unavailable." });
+        return;
+      }
+      request.then(
+        (granted) => finish({ granted: Boolean(granted) }),
+        (err) => finish({ granted: false, error: String(err?.message ?? err) }),
+      );
+    } catch (err) {
+      finish({ granted: false, error: String(err?.message ?? err) });
+    }
+
+    // If Chrome never resolves (rare, but it happens when the prompt is
+    // suppressed), do not leave the button dead forever.
+    setTimeout(() => finish({ granted: false, error: "Permission request timed out." }), 60000);
+  });
+}
+
+$("add").addEventListener("click", async () => {
+  try {
+    const raw = $("pattern").value;
+    const pattern = normalise(raw);
+    if (!validPattern(pattern)) {
+      msg("That does not look like a valid site pattern. Try example.com or https://example.com/*", "err");
       return;
     }
-  }
 
-  const patterns = await getPatterns();
-  if (patterns.includes(pattern)) {
-    msg("Already in the list.");
-    return;
+    const origin = pattern.match(/^(\*|https?):\/\/([^/]+)/);
+    const host = origin ? origin[2].replace(/^\*\./, "") : null;
+
+    // `chrome.permissions.request` must be the FIRST await in this handler.
+    // Any await before it (even `permissions.contains`) consumes the user
+    // gesture, after which request() never resolves and never throws — the
+    // button just looks dead. When the permission is already granted Chrome
+    // resolves request() immediately without showing a prompt, so there is
+    // nothing to pre-check.
+    if (host) {
+      // Tell the user something is happening BEFORE awaiting: the permission
+      // prompt is native browser UI, and while it is open this handler is
+      // suspended. Without this line the button looks dead.
+      msg(`Waiting for permission for ${host}…`);
+      $("add").disabled = true;
+      let result;
+      try {
+        result = await requestOrigin(host);
+      } finally {
+        $("add").disabled = false;
+      }
+
+      if (!result.granted) {
+        msg(
+          result.error
+            ? `Could not add the site: ${result.error}`
+            : "Permission was not granted for that site.",
+          "err",
+        );
+        return;
+      }
+    }
+
+    const patterns = await getPatterns();
+    if (patterns.includes(pattern)) {
+      msg("Already in the list.");
+      return;
+    }
+
+    await setPatterns([...patterns, pattern]);
+    $("pattern").value = "";
+    await render();
+    msg("Added. Open a page on that site to translate it.", "ok");
+  } catch (err) {
+    // Without this, any rejection makes the button look dead.
+    msg(`Could not add the site: ${String(err?.message ?? err)}`, "err");
   }
-  await setPatterns([...patterns, pattern]);
-  $("pattern").value = "";
-  await render();
-  msg("Added. Open a page on that site to translate it.", "ok");
 });
 
 $("toggleEnabled").addEventListener("click", async () => {
