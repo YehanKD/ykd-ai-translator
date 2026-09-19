@@ -191,5 +191,45 @@ console.log("\n7) insertIntoComposer guards bad input");
   check("non-string => false", api.insertIntoComposer(new Element("div"), null) === false);
 }
 
+console.log("\n8) shouldSendOnKey — Enter sends, Shift+Enter does not");
+{
+  const api = load({ [SEL_1688]: [] });
+  const key = (over = {}) => ({
+    key: "Enter", shiftKey: false, isComposing: false, keyCode: 13, ...over,
+  });
+
+  check("plain Enter sends", api.shouldSendOnKey(key()) === true);
+  check("Ctrl+Enter sends", api.shouldSendOnKey(key({ ctrlKey: true })) === true);
+  check("Cmd+Enter sends", api.shouldSendOnKey(key({ metaKey: true })) === true);
+
+  check("Shift+Enter does NOT send (newline)",
+    api.shouldSendOnKey(key({ shiftKey: true })) === false);
+
+  // An input method mid-composition: Enter confirms the candidate, so sending
+  // here would fire on half-typed text. This is the fcitx5 / Chinese IME case.
+  check("Enter during IME composition does NOT send",
+    api.shouldSendOnKey(key({ isComposing: true })) === false);
+  check("keyCode 229 (legacy IME signal) does NOT send",
+    api.shouldSendOnKey(key({ keyCode: 229 })) === false);
+
+  check("other keys do not send", api.shouldSendOnKey(key({ key: "a" })) === false);
+  check("Escape does not send", api.shouldSendOnKey(key({ key: "Escape" })) === false);
+  check("null event does not send", api.shouldSendOnKey(null) === false);
+}
+
+console.log("\n9) source shape: pebble.js delegates to the shared rule");
+{
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const src = fs.readFileSync(
+    path.join(import.meta.dirname, "../../extension/content/pebble.js"), "utf8");
+  check("pebble uses YKDCompose.shouldSendOnKey",
+    /window\.YKDCompose\.shouldSendOnKey\(event\)/.test(src),
+    "an inline copy would drift from the tested rule");
+  check("no leftover ctrl-only Enter handler",
+    !/ctrlKey \|\| event\.metaKey\) && event\.key === "Enter"/.test(src),
+    "the old handler made plain Enter insert a newline instead of sending");
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

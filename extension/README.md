@@ -24,7 +24,8 @@ The seller chat is in Chinese, but you do not have to write in it.
 1. A small teal button sits in the bottom-left of any page that has a message box.
    It is **draggable** — put it wherever suits, and it stays there.
 2. Click it. A rounded panel opens with a text box.
-3. Type your message in English and press **Translate & insert** (or Ctrl/Cmd+Enter).
+3. Type your message in English and press **Enter** — or click **Translate & insert**.
+   **Shift+Enter** makes a newline if you need more than one line.
 4. The Chinese translation is placed in the site's message box.
 
 **It does not send for you.** The text sits in the box so you can read it over,

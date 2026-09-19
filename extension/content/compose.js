@@ -136,11 +136,33 @@ function insertIntoComposer(el, text) {
   return true;
 }
 
+/**
+ * Decide whether a keydown inside a message box means "send".
+ *
+ * Lives here (rather than inline in the UI) so the rules can be tested against
+ * the real implementation instead of a copy of them.
+ *
+ * Enter sends. Three cases deliberately do NOT:
+ *   - an input method is mid-composition (fcitx5, IBus, a Chinese IME) — Enter
+ *     is confirming a candidate there, and sending would fire on half-typed text
+ *   - Shift is held, which is the escape hatch for a multi-line message
+ *   - it is not Enter at all
+ */
+function shouldSendOnKey(event) {
+  if (!event || event.key !== "Enter") return false;
+  // `isComposing` is the standard signal; keyCode 229 covers browsers and
+  // input methods that do not set it.
+  if (event.isComposing || event.keyCode === 229) return false;
+  if (event.shiftKey) return false;
+  return true;
+}
+
 // Content scripts share one isolated-world scope, so publish the API.
 window.YKDCompose = {
   findComposer,
   hasComposer,
   insertIntoComposer,
+  shouldSendOnKey,
   isVisible,
   COMPOSER_SELECTORS,
 };

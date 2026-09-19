@@ -391,12 +391,18 @@
     el.send.addEventListener("click", send);
     el.textarea.addEventListener("input", updateCount);
     el.textarea.addEventListener("keydown", (event) => {
-      // Ctrl/Cmd+Enter sends, matching the surrounding app's habits.
-      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-        event.preventDefault();
-        send();
+      if (event.key === "Escape") {
+        closePebble();
+        return;
       }
-      if (event.key === "Escape") closePebble();
+
+      // Enter sends; Shift+Enter is a newline; an in-progress IME composition
+      // is left alone so Enter can confirm the candidate. The rule itself
+      // lives in compose.js so it is testable.
+      if (!window.YKDCompose.shouldSendOnKey(event)) return;
+
+      event.preventDefault();
+      send();
     });
 
     // Clicking outside closes, without stealing the click from the page.
